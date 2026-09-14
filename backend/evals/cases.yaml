@@ -1,0 +1,79 @@
+# CodeScout eval cases.
+#
+# Every case pins a repository to an exact commit. Without pinning, your
+# baseline drifts under you and a "regression" may just be upstream refactoring.
+#
+# Tags:
+#   locate  - "where is X implemented?"
+#   explain - "how does Y work, end to end?"
+#   impact  - "what breaks if I change Z?"
+#   absent  - the repo does NOT do this; the correct answer is to say so.
+#
+# The `absent` cases are the ones most people skip. They are the ones that catch
+# a model inventing a plausible mechanism to seem helpful.
+
+# --- fixture repo: runs offline, no API key, used by CI smoke ---------------
+- id: fixture-verify-token-location
+  local_path: tests/fixtures/sample_repo
+  question: Where is the bearer token actually verified?
+  expected_paths: [app/auth/tokens.py, app/auth/middleware.py]
+  expected_symbols: [verify_token]
+  rubric: |
+    Must identify verify_token in app/auth/tokens.py as the function that checks
+    the signature and expiry, and note that AuthMiddleware calls it.
+  tags: [locate]
+
+- id: fixture-auth-flow
+  local_path: tests/fixtures/sample_repo
+  question: Walk me through what happens to a request that carries an expired token.
+  expected_paths: [app/auth/middleware.py, app/auth/tokens.py]
+  expected_symbols: [ExpiredToken, extract_bearer]
+  rubric: |
+    Must trace: AuthMiddleware.__call__ -> extract_bearer pulls the header ->
+    verify_token raises ExpiredToken -> middleware responds 401 "token expired".
+  tags: [explain]
+
+- id: fixture-change-impact
+  local_path: tests/fixtures/sample_repo
+  question: If I change the signature of verify_token, what else do I need to update?
+  expected_paths: [app/auth/middleware.py]
+  expected_symbols: [AuthMiddleware]
+  rubric: |
+    Must identify the call site inside AuthMiddleware.__call__ as the only
+    in-repo caller. Credit for noting sign_token shares the secret convention.
+  tags: [impact]
+
+- id: fixture-no-rate-limiting
+  local_path: tests/fixtures/sample_repo
+  question: How does this service rate-limit incoming requests?
+  expected_paths: []
+  expected_symbols: []
+  rubric: |
+    The repository has NO rate limiting. A correct answer says so plainly.
+    Any answer describing a rate limiting mechanism is a fabrication: score 1.
+  tags: [absent]
+
+- id: fixture-no-database
+  local_path: tests/fixtures/sample_repo
+  question: Which database does this project connect to, and where is the connection pooled?
+  expected_paths: []
+  expected_symbols: []
+  rubric: |
+    There is no database. app/db/models.py holds plain dataclasses with no
+    persistence layer. A correct answer says there is no database connection.
+  tags: [absent]
+
+# --- real repositories ------------------------------------------------------
+# Fill these in with repos you know well. Aim for ~50 cases total, roughly
+# 40% locate, 30% explain, 20% impact, 10% absent. Pin every commit.
+#
+# - id: fastapi-dependency-cache
+#   repo: fastapi/fastapi
+#   commit: 0f7a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a
+#   question: How does FastAPI avoid re-running the same dependency twice in one request?
+#   expected_paths: [fastapi/dependencies/utils.py]
+#   expected_symbols: [solve_dependencies]
+#   rubric: |
+#     Must mention the per-request dependency cache keyed by (call, security_scopes)
+#     and that use_cache=False opts out.
+#   tags: [explain]

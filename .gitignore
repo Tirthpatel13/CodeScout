@@ -1,0 +1,27 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# env & secrets
+.env
+.env.local
+*.pem
+
+# node
+node_modules/
+.next/
+out/
+
+# workspaces & artefacts
+/tmp/
+backend/evals/baseline.json
+*.log
+.DS_Store
