@@ -1,0 +1,82 @@
+databases:
+  - name: codescout-db
+    plan: free
+
+services:
+  - name: codescout-redis
+    type: keyvalue
+    plan: free
+    ipAllowList: []
+
+  - name: codescout-api
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    # Render's free plan has no SSH access to run `alembic upgrade head`
+    # by hand, so run it on every boot instead; it's a no-op once current.
+    dockerCommand: >-
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codescout-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: codescout-redis
+          property: connectionString
+      - key: ENV
+        value: prod
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: LLM_PROVIDER
+        value: fake
+      - key: EMBEDDING_PROVIDER
+        value: fake
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+
+  - name: codescout-worker
+    type: worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: arq app.worker.WorkerSettings
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codescout-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: codescout-redis
+          property: connectionString
+      - key: ENV
+        value: prod
+      # Must be set to the exact same value as codescout-api's
+      # TOKEN_ENCRYPTION_KEY, or the worker can't decrypt the GitHub tokens
+      # the API encrypted. Set both manually after the blueprint is created.
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: fake
+      - key: EMBEDDING_PROVIDER
+        value: fake
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false

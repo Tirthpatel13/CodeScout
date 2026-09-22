@@ -61,9 +61,15 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _require_async_driver(cls, v: str) -> str:
-        if not v.startswith("postgresql+asyncpg://"):
-            raise ValueError("database_url must use the postgresql+asyncpg:// driver")
-        return v
+        # Managed Postgres providers (Render, Heroku, ...) hand back a plain
+        # postgres:// or postgresql:// URL; normalize to the asyncpg driver
+        # rather than rejecting it.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix) :]
+        if v.startswith("postgresql+asyncpg://"):
+            return v
+        raise ValueError("database_url must be a postgres connection string")
 
     @property
     def sync_database_url(self) -> str:

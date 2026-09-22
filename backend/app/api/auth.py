@@ -73,12 +73,18 @@ async def github_callback(
         user.access_token = encrypted
     await session.flush()
 
+    # In prod the frontend and API live on different domains (e.g. Vercel and
+    # Render), so the cookie must be sent cross-site: that requires
+    # SameSite=None, which browsers only honor alongside Secure. In dev,
+    # frontend and API are same-site (different localhost ports), so Lax
+    # keeps working over plain HTTP.
+    cross_site = settings.env == "prod"
     response.set_cookie(
         SESSION_COOKIE,
         serializer.dumps({"user_id": str(user.id)}),
         httponly=True,
-        secure=settings.env == "prod",
-        samesite="lax",
+        secure=cross_site,
+        samesite="none" if cross_site else "lax",
         max_age=60 * 60 * 24 * 14,
     )
     return {"id": str(user.id), "login": user.login, "avatar_url": user.avatar_url}
@@ -90,5 +96,10 @@ async def me(user: UserDep) -> dict[str, object]:
 
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE)
+async def logout(response: Response, settings: SettingsDep) -> None:
+    # Must match the attributes the cookie was set with, or some browsers
+    # won't treat this as the same cookie and it never actually clears.
+    cross_site = settings.env == "prod"
+    response.delete_cookie(
+        SESSION_COOKIE, secure=cross_site, samesite="none" if cross_site else "lax"
+    )
