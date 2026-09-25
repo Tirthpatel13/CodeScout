@@ -17,8 +17,9 @@ services:
     healthCheckPath: /health
     # Render's free plan has no SSH access to run `alembic upgrade head`
     # by hand, so run it on every boot instead; it's a no-op once current.
-    dockerCommand: >-
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    # dockerCommand isn't run through a shell, so the migrate-then-serve
+    # chain lives in a script rather than an inline `&&`.
+    dockerCommand: sh start.sh
     envVars:
       - key: DATABASE_URL
         fromDatabase:
