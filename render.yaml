@@ -18,7 +18,9 @@ services:
     # Render's free plan has no SSH access to run `alembic upgrade head`
     # by hand, so run it on every boot instead; it's a no-op once current.
     # dockerCommand isn't run through a shell, so the migrate-then-serve
-    # chain lives in a script rather than an inline `&&`.
+    # chain lives in a script rather than an inline `&&`. That script also
+    # runs the ARQ worker alongside the API in this one free service, since
+    # Render's free tier has no background-worker plan — see start.sh.
     dockerCommand: sh start.sh
     envVars:
       - key: DATABASE_URL
@@ -50,34 +52,12 @@ services:
       - key: VOYAGE_API_KEY
         sync: false
 
-  - name: codescout-worker
-    type: worker
-    runtime: docker
-    plan: starter
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    dockerCommand: arq app.worker.WorkerSettings
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: codescout-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: codescout-redis
-          property: connectionString
-      - key: ENV
-        value: prod
-      # Must be set to the exact same value as codescout-api's
-      # TOKEN_ENCRYPTION_KEY, or the worker can't decrypt the GitHub tokens
-      # the API encrypted. Set both manually after the blueprint is created.
-      - key: TOKEN_ENCRYPTION_KEY
-        sync: false
-      - key: LLM_PROVIDER
-        value: fake
-      - key: EMBEDDING_PROVIDER
-        value: fake
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: VOYAGE_API_KEY
-        sync: false
+# A separate codescout-worker (type: worker) service is the better shape
+# once a paid plan is in play — Render's free tier doesn't offer background
+# workers at all, so for now the worker runs inside codescout-api itself
+# (see start.sh). To split it back out: add a `type: worker` service here
+# with `dockerCommand: arq app.worker.WorkerSettings`, the same
+# DATABASE_URL/REDIS_URL/TOKEN_ENCRYPTION_KEY as codescout-api (the
+# encryption key in particular *must* match exactly, since the worker
+# decrypts what the API encrypts), then drop the `arq ...  &` line from
+# start.sh.
