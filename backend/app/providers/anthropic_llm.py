@@ -40,10 +40,11 @@ class AnthropicLLM:
         max_tokens: int = 2048,
         temperature: float = 0.0,
     ) -> LLMResponse:
+        # `temperature` is accepted for the LLMProvider protocol but not sent:
+        # recent anthropic SDKs removed it from messages.create().
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             # Cache the system prompt + repo overview across turns; it is the
             # largest static block and by far the cheapest win available.
             "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
