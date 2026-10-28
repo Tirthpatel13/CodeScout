@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # voyage-code-3 native dimension. Changing this requires a migration, because the
 # pgvector column dimension is fixed at DDL time.
 EMBEDDING_DIM = 1024
+
+
+def _rewrite_query(
+    url: str, *, rename: dict[str, str] | None = None, drop: set[str] | None = None
+) -> str:
+    """Rename or drop query parameters, leaving the rest of the URL byte-for-byte alone."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    rename, drop = rename or {}, drop or set()
+    pairs = [
+        (rename.get(key, key), value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in drop
+    ]
+    return urlunsplit(parts._replace(query=urlencode(pairs)))
 
 
 class Settings(BaseSettings):
@@ -61,20 +78,23 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _require_async_driver(cls, v: str) -> str:
-        # Managed Postgres providers (Render, Heroku, ...) hand back a plain
-        # postgres:// or postgresql:// URL; normalize to the asyncpg driver
-        # rather than rejecting it.
+        # Managed Postgres providers (Render, Neon, Heroku, ...) hand back a
+        # plain postgres:// or postgresql:// URL, often with libpq-only query
+        # params. Normalize to the asyncpg driver and its spelling of them
+        # rather than rejecting the URL.
         for prefix in ("postgres://", "postgresql://"):
             if v.startswith(prefix):
-                return "postgresql+asyncpg://" + v[len(prefix) :]
-        if v.startswith("postgresql+asyncpg://"):
-            return v
-        raise ValueError("database_url must be a postgres connection string")
+                v = "postgresql+asyncpg://" + v[len(prefix) :]
+                break
+        if not v.startswith("postgresql+asyncpg://"):
+            raise ValueError("database_url must be a postgres connection string")
+        return _rewrite_query(v, rename={"sslmode": "ssl"}, drop={"channel_binding"})
 
     @property
     def sync_database_url(self) -> str:
-        """Alembic runs synchronously, over psycopg3."""
-        return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+        """Alembic runs synchronously, over psycopg3 (which speaks libpq's sslmode)."""
+        url = self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+        return _rewrite_query(url, rename={"ssl": "sslmode"})
 
 
 @lru_cache
